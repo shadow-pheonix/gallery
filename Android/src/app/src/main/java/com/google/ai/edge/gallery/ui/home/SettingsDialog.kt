@@ -16,7 +16,6 @@
 
 package com.google.ai.edge.gallery.ui.home
 
-import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
 import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
@@ -85,7 +84,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.R
+import com.google.ai.edge.gallery.common.diagnostics.DiagnosticReport
 import com.google.ai.edge.gallery.common.diagnostics.DiagnosticsExporter
+import com.google.ai.edge.gallery.common.diagnostics.GitHubDiagnosticsStore
 import com.google.ai.edge.gallery.proto.Theme
 import com.google.ai.edge.gallery.services.asr.AsrEngineType
 import com.google.ai.edge.gallery.ui.common.ClickableLink
@@ -95,6 +96,7 @@ import com.google.ai.edge.gallery.ui.modelmanager.checkAsrEngineSupport
 import com.google.ai.edge.gallery.ui.modelmanager.saveAsrEngineType
 import com.google.ai.edge.gallery.ui.theme.ThemeSettings
 import com.google.ai.edge.gallery.ui.theme.labelSmallNarrow
+import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -113,6 +115,7 @@ fun SettingsDialog(
   modelManagerViewModel: ModelManagerViewModel,
   onDismissed: () -> Unit,
 ) {
+  val diagnosticsContext = LocalContext.current.applicationContext
   var selectedTheme by remember { mutableStateOf(curThemeOverride) }
   var selectedFirebaseAnalytics by remember { mutableStateOf(curFirebaseAnalytics) }
   var hfToken by remember { mutableStateOf(modelManagerViewModel.getTokenStatusAndData().data) }
@@ -128,6 +131,30 @@ fun SettingsDialog(
   var showTos by remember { mutableStateOf(false) }
   var exportingDiagnostics by remember { mutableStateOf(false) }
   val coroutineScope = rememberCoroutineScope()
+
+  suspend fun captureDiagnostics(additionalSecrets: List<String> = emptyList()): DiagnosticReport {
+    val state = modelManagerViewModel.uiState.value
+    val hfData = modelManagerViewModel.getTokenStatusAndData().data
+    val githubToken =
+      try {
+        GitHubDiagnosticsStore(diagnosticsContext).load()?.token
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (_: Exception) {
+        null
+      }
+    return DiagnosticsExporter.capture(
+      context = diagnosticsContext,
+      modelStatuses = state.modelDownloadStatus.toMap(),
+      models =
+        (state.tasks.flatMap { it.models } + state.supplementaryModels + state.selectedModel)
+          .distinctBy { it.name }
+          .toList(),
+      benchmarkResults = { modelManagerViewModel.dataStoreRepository.getAllBenchmarkResults() },
+      secrets =
+        additionalSecrets + listOfNotNull(hfData?.accessToken, hfData?.refreshToken, githubToken),
+    )
+  }
 
   LaunchedEffect(Unit) { modelManagerViewModel.checkAsrEngineSupport() }
 
@@ -415,38 +442,25 @@ fun SettingsDialog(
               onClick = {
                 exportingDiagnostics = true
                 val appContext = context.applicationContext
-                val state = modelManagerViewModel.uiState.value
-                val statuses = state.modelDownloadStatus.toMap()
-                val models =
-                  (state.tasks.flatMap { it.models } + state.supplementaryModels + state.selectedModel)
-                    .distinctBy { it.name }
-                    .toList()
-                val token = modelManagerViewModel.getTokenStatusAndData().data
                 coroutineScope.launch {
                   try {
                     val filename =
-                      DiagnosticsExporter.export(
-                        context = appContext,
-                        modelStatuses = statuses,
-                        models = models,
-                        benchmarkResults = {
-                          modelManagerViewModel.dataStoreRepository.getAllBenchmarkResults()
-                        },
-                        secrets = listOfNotNull(token?.accessToken, token?.refreshToken),
-                      )
+                      DiagnosticsExporter.saveToDownloads(appContext, captureDiagnostics())
                     Toast.makeText(
-                      appContext,
-                      appContext.getString(R.string.settings_diagnostics_saved, filename),
-                      Toast.LENGTH_LONG,
-                    ).show()
+                        appContext,
+                        appContext.getString(R.string.settings_diagnostics_saved, filename),
+                        Toast.LENGTH_LONG,
+                      )
+                      .show()
                   } catch (cancelled: CancellationException) {
                     throw cancelled
                   } catch (_: Exception) {
                     Toast.makeText(
-                      appContext,
-                      R.string.settings_diagnostics_failed,
-                      Toast.LENGTH_LONG,
-                    ).show()
+                        appContext,
+                        R.string.settings_diagnostics_failed,
+                        Toast.LENGTH_LONG,
+                      )
+                      .show()
                   } finally {
                     exportingDiagnostics = false
                   }
@@ -461,6 +475,8 @@ fun SettingsDialog(
               )
             }
           }
+
+          GitHubDiagnosticsSection(captureReport = { captureDiagnostics(it) })
 
           // Third party licenses.
           Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {

@@ -16,11 +16,43 @@
 
 <resources xmlns:tools="http://schemas.android.com/tools">
   <string name="settings_diagnostics_title">Diagnostics</string>
-  <string name="settings_diagnostics_description">Run the model and benchmarks first, then export timings, token speeds, backend settings, memory, thermal, battery, frame timing, errors, and recent logs as JSON to Downloads. Records stay on this device. Review logs before sharing.</string>
+  <string name="settings_diagnostics_description">Run the model and benchmarks first, then export timings, token speeds, backend settings, memory, thermal, battery, frame timing, errors, and recent logs as JSON to Downloads. Records stay on this device unless you tap Push diagnostics. Review logs before sharing.</string>
   <string name="settings_diagnostics_export">Export diagnostics</string>
   <string name="settings_diagnostics_exporting">Exporting…</string>
   <string name="settings_diagnostics_saved">Saved to Downloads/%1$s</string>
   <string name="settings_diagnostics_failed">Could not save diagnostics to Downloads. Check available storage and try again.</string>
+  <string name="diagnostics_github_description">Push a diagnostic report, including recent logs, to your private GitHub repository. Uploads happen only when you tap the button.</string>
+  <string name="diagnostics_github_destination">Private repository: %1$s</string>
+  <string name="diagnostics_github_push">Push diagnostics</string>
+  <string name="diagnostics_github_pushing">Pushing diagnostics…</string>
+  <string name="diagnostics_github_setup">GitHub setup</string>
+  <string name="diagnostics_github_open_latest">Open latest upload</string>
+  <string name="diagnostics_github_setup_instructions">Choose a private repository. Create a fine-grained GitHub token with access to that repository only and Contents: Read and write permission. Paste it here once; it is encrypted on this device. Raw logs may contain personal data.</string>
+  <string name="diagnostics_github_repository">Repository (owner/name)</string>
+  <string name="diagnostics_github_token">GitHub token</string>
+  <string name="diagnostics_github_token_hint">Enter the token on this phone; do not share it in chat.</string>
+  <string name="diagnostics_github_token_keep">Leave blank to keep the saved token.</string>
+  <string name="diagnostics_github_create_token">Create a GitHub token</string>
+  <string name="diagnostics_github_disconnect">Disconnect GitHub</string>
+  <string name="diagnostics_github_save">Save connection</string>
+  <string name="diagnostics_github_checking">Checking…</string>
+  <string name="diagnostics_github_cancel">Cancel</string>
+  <string name="diagnostics_github_bad_repository">Enter owner/name, for example shadow-pheonix/gallery-diagnostics.</string>
+  <string name="diagnostics_github_bad_token">Enter a valid GitHub token without spaces.</string>
+  <string name="diagnostics_github_uploaded">Diagnostics uploaded to your private GitHub repository.</string>
+  <string name="diagnostics_github_auth_failed">GitHub rejected the token. It may have expired or been revoked. Update it in GitHub setup.</string>
+  <string name="diagnostics_github_permission_failed">GitHub denied access. Give the token Contents: Read and write permission for the selected repository.</string>
+  <string name="diagnostics_github_not_found">Repository not found or not accessible. Check owner/name and the repositories selected for the token.</string>
+  <string name="diagnostics_github_public">This repository is public. Choose a private repository before pushing logs.</string>
+  <string name="diagnostics_github_archived">This repository is archived. Choose an active private repository.</string>
+  <string name="diagnostics_github_rate_limit">GitHub is temporarily limiting requests. Try again later.</string>
+  <string name="diagnostics_github_conflict">GitHub could not create the report. Check the repository and try again.</string>
+  <string name="diagnostics_github_network">Connection failed. If the upload had started, it may have reached GitHub; check the repository before retrying.</string>
+  <string name="diagnostics_github_too_large">This report exceeds the 10 MB upload limit. Export it to Downloads instead.</string>
+  <string name="diagnostics_github_push_failed">Could not finish the upload. Check the repository before retrying. You can still export to Downloads.</string>
+  <string name="diagnostics_github_storage_failed">Could not open or save the encrypted GitHub connection. Re-enter the repository and token in GitHub setup.</string>
+  <string name="diagnostics_github_receipt_not_saved">The upload succeeded, but its link could not be saved on this phone. Open the upload below.</string>
+  <string name="diagnostics_github_browser_failed">Could not open a browser on this device.</string>
   <string name="about_this_update" translatable="true" description="Title of the alert dialog that shows information about a model update. [CHAR_LIMIT=29]">About this update</string>
   <string name="all" translatable="true" description="Label for selecting or filtering all items (e.g., all models, all cutouts). [CHAR_LIMIT=18]">All</string>
   <string name="add" translatable="true" description="Button label to add a new item, such as a skill or server. [CHAR_LIMIT=6]">Add</string>

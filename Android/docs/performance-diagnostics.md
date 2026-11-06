@@ -1,8 +1,9 @@
 # Performance diagnostics
 
 Settings → Export diagnostics saves a versioned JSON report directly to Downloads. No storage
-permission is required. This capture is local: it has no analytics or upload transport and does not
-use the legacy Firebase metrics logger. It starts with the app; no developer tools are needed.
+permission is required. Recording is local, does not use the legacy Firebase metrics logger, and
+starts with the app. Uploading requires an explicit tap on Push diagnostics; there is no automatic
+upload. No developer tools are needed.
 
 After installing this change, load the model, perform several representative turns, and run the
 benchmark screen with the same model and backend. Include a short/new conversation, a longer
@@ -82,3 +83,41 @@ frame deadlines, bounded samples with full-run aggregates, and actual inference 
 (success, error, cancellation before/after output, session reset, duplicate completion, and
 synchronous requests). Device-specific counters and native
 behavior require a later on-device check after an APK is authorized.
+
+
+## Push diagnostics to GitHub
+
+The separate private repository `shadow-pheonix/gallery-diagnostics` is the default destination.
+Settings → GitHub setup accepts `owner/name` and a fine-grained personal access token scoped to that
+repository with **Contents: Read and write** permission. Metadata access is also needed to check the
+repository. Setup verifies access and private visibility without creating a report. No GitHub
+credential from the server or repository secret is embedded in the APK. Enter the token once on the
+phone; no token needs to be sent in chat.
+
+Push diagnostics captures the same report as Downloads, checks the destination is still private and
+active, redacts again at the upload boundary (including the exact GitHub token), and creates a unique
+JSON file below `diagnostics/YYYY/MM/DD/`. It shows an immutable link containing the commit SHA and
+retains the latest successful link across app restarts. The connected agent can read this private
+repository when asked. GitHub Contents API readers must use the raw media type for files over 1 MB.
+The app caps uploads at 10 MB; Downloads export remains available.
+
+Tokens and the latest-link receipt are encrypted with AES-256-GCM using a non-exportable Android
+Keystore key and an atomic file in the no-backup directory. Password fields are not saved in instance
+state or prefilled, connection objects have a redacted string representation, and token patterns are
+also removed from Downloads exports. Disconnect GitHub deletes the saved connection and its key;
+revoke the token in GitHub settings if desired. Private report links are opened without the app's
+analytics link wrapper.
+
+Requests use HTTPS to the fixed `api.github.com` origin, do not follow redirects, have connection/read
+timeouts and bounded responses, and send no raw server error bodies to the UI or logs. There is no
+background upload or automatic write retry. If a connection fails after GitHub accepted the commit,
+the report may already exist: check the repository before retrying. Leaving Settings cancels the UI
+operation; a blocking network request may finish or time out, so an in-flight upload may still reach
+GitHub. A repository administrator changing visibility can still expose previously uploaded data;
+the app cannot control GitHub repository administration.
+
+Unit coverage includes private-repository gates, safe paths, exact credential redaction, API error
+mapping, no automatic write retry, request headers/body, rejected redirects, upload limits, immutable
+receipt links, AES-GCM round trips, nonce uniqueness, wrong keys and ciphertext tampering. Android
+Keystore, the system browser and the Compose interactions require an on-device check after an APK is
+authorized; this feature is validated in GitHub Actions without packaging one.

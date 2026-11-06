@@ -23,6 +23,7 @@ internal fun redactDiagnostics(text: String, secrets: List<String> = emptyList()
     result = result.replace(secret, "[REDACTED]")
   }
   result = result.replace(Regex("hf_[A-Za-z0-9]+"), "[REDACTED]")
+  result = result.replace(Regex("(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+"), "[REDACTED]")
   result = result.replace(Regex("(?i)(?:Bearer|Basic)\\s+[^\\s\"',;]+"), "[REDACTED]")
   return result.replace(
     Regex(

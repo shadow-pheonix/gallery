@@ -34,15 +34,18 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Exports an app-scoped report to public Downloads without a storage permission. */
+/** A single captured report shared by Downloads and explicitly requested GitHub uploads. */
+class DiagnosticReport(val filename: String, val json: String)
+
+/** Captures diagnostics independently of their destination; neither capture nor export uploads. */
 object DiagnosticsExporter {
-  suspend fun export(
+  suspend fun capture(
     context: Context,
     modelStatuses: Map<String, ModelDownloadStatus> = emptyMap(),
     secrets: List<String> = emptyList(),
     models: List<Model> = emptyList(),
     benchmarkResults: () -> List<BenchmarkResult> = { emptyList() },
-  ): String =
+  ): DiagnosticReport =
     withContext(Dispatchers.IO) {
       val now = Instant.now()
       val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").withZone(ZoneOffset.UTC)
@@ -97,10 +100,15 @@ object DiagnosticsExporter {
           ),
           secrets,
         )
+      DiagnosticReport(filename, report)
+    }
+
+  suspend fun saveToDownloads(context: Context, report: DiagnosticReport): String =
+    withContext(Dispatchers.IO) {
       val resolver = context.contentResolver
       val values =
         ContentValues().apply {
-          put(MediaStore.Downloads.DISPLAY_NAME, filename)
+          put(MediaStore.Downloads.DISPLAY_NAME, report.filename)
           put(MediaStore.Downloads.MIME_TYPE, "application/json")
           put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
           put(MediaStore.Downloads.IS_PENDING, 1)
@@ -111,7 +119,7 @@ object DiagnosticsExporter {
       try {
         val output =
           resolver.openOutputStream(uri) ?: throw IOException("Could not open the diagnostics file")
-        output.bufferedWriter(Charsets.UTF_8).use { it.write(report) }
+        output.bufferedWriter(Charsets.UTF_8).use { it.write(report.json) }
         val published =
           resolver.update(
             uri,
@@ -125,7 +133,7 @@ object DiagnosticsExporter {
         runCatching { resolver.delete(uri, null, null) }
         throw error
       }
-      filename
+      report.filename
     }
 
   private fun readAppLogs(context: Context): String {
