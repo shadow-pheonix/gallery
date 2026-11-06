@@ -20,6 +20,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import com.google.ai.edge.gallery.common.cleanUpMediapipeTaskErrorMessage
+import com.google.ai.edge.gallery.common.diagnostics.modelConfiguration
 import com.google.ai.edge.gallery.common.metrics.InferenceStatus
 import com.google.ai.edge.gallery.common.metrics.MetricsTracker
 import com.google.ai.edge.gallery.common.metrics.asSession
@@ -89,6 +90,7 @@ data class LlmModelInstance(
   var conversation: Conversation,
   val metricsTracker: MetricsTracker? = null,
   val diagnosticsTrackerFactory: (() -> MetricsTracker)? = null,
+  var conversationDiagnostics: Map<String, Any?> = emptyMap(),
 ) : LlmConversationInstance {
   val activeEphemeralConversations: MutableSet<Conversation> =
     Collections.synchronizedSet(mutableSetOf())
@@ -97,6 +99,7 @@ data class LlmModelInstance(
 
   override fun sendMessage(prompt: String, maxOutputTokens: Int?): Message {
     val tracker = diagnosticsTrackerFactory?.invoke() ?: metricsTracker
+    tracker?.updateConversationDiagnostics(conversationDiagnostics)
     tracker?.updateRequestDiagnostics(
       mapOf(
         "inputCharacterCount" to prompt.length,
@@ -297,6 +300,14 @@ object LlmChatModelHelper : LlmModelHelper {
           engine = engine,
           conversation = conversation,
           metricsTracker = metricsTracker,
+          conversationDiagnostics =
+            conversationDiagnosticConfiguration(
+              model,
+              systemInstruction,
+              tools,
+              initialMessages,
+              enableConversationConstrainedDecoding,
+            ),
           diagnosticsTrackerFactory = {
             MetricsTracker.create(
               context.applicationContext,
@@ -316,6 +327,9 @@ object LlmChatModelHelper : LlmModelHelper {
       metricsTracker.close()
       onDone(errorMsg)
       return
+    }
+    (model.instance as? LlmModelInstance)?.let {
+      metricsTracker.updateConversationDiagnostics(it.conversationDiagnostics)
     }
     metricsTracker.onModelInitialized()
     onDone("")
@@ -360,12 +374,36 @@ object LlmChatModelHelper : LlmModelHelper {
       // and sensor histories are rewound to match. This also clears a turn left active by closing
       // the old conversation mid-flight.
       instance.metricsTracker?.resetSession()
+      instance.conversationDiagnostics =
+        conversationDiagnosticConfiguration(
+          model,
+          systemInstruction,
+          tools,
+          initialMessages,
+          enableConversationConstrainedDecoding,
+        )
+      instance.metricsTracker?.updateConversationDiagnostics(instance.conversationDiagnostics)
 
       Log.d(TAG, "Resetting done")
     } catch (e: Exception) {
       Log.d(TAG, "Failed to reset conversation", e)
     }
   }
+
+  private fun conversationDiagnosticConfiguration(
+    model: Model,
+    systemInstruction: Contents?,
+    tools: List<ToolProvider>,
+    initialMessages: List<Message>,
+    constrainedDecoding: Boolean,
+  ): Map<String, Any?> =
+    modelConfiguration(model) +
+      mapOf(
+        "systemInstructionPresent" to (systemInstruction != null),
+        "toolProviderCount" to tools.size,
+        "initialMessageCount" to initialMessages.size,
+        "conversationConstrainedDecoding" to constrainedDecoding,
+      )
 
   @OptIn(ExperimentalApi::class) // opt-in experimental flags
   private fun createConversation(
@@ -527,6 +565,17 @@ object LlmChatModelHelper : LlmModelHelper {
 
     val turnTracker =
       if (isEphemeral) instance.diagnosticsTrackerFactory?.invoke() else instance.metricsTracker
+    turnTracker?.updateConversationDiagnostics(
+      if (isEphemeral)
+        modelConfiguration(model) +
+          mapOf(
+            "systemInstructionPresent" to false,
+            "toolProviderCount" to 0,
+            "initialMessageCount" to 0,
+            "conversationConstrainedDecoding" to false,
+          )
+      else instance.conversationDiagnostics
+    )
     val ephemeralClosed = AtomicBoolean(false)
     var scopeCompletionHandle: DisposableHandle? = null
     fun closeEphemeralConversationOnce() {

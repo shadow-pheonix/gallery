@@ -16,8 +16,7 @@
 
 package com.google.ai.edge.gallery.common.metrics
 
-import android.content.Context
-import com.google.ai.edge.gallery.common.diagnostics.PerformanceDiagnostics
+import com.google.ai.edge.gallery.common.diagnostics.DiagnosticOperation
 import com.google.ai.edge.gallery.common.diagnostics.modelConfiguration
 import com.google.ai.edge.gallery.data.Model
 import java.util.UUID
@@ -26,17 +25,17 @@ import kotlinx.coroutines.flow.StateFlow
 
 /** Local recording without the legacy MetricsLogger's Firebase/Logcat transport. */
 internal class LocalDiagnosticsMetricsTracker(
-  private val context: Context,
   private val model: Model,
   private val taskId: String,
   private val runtime: Map<String, Any?>,
   recordInitialization: Boolean,
+  private val beginOperation: (String, Map<String, Any?>) -> DiagnosticOperation,
 ) : MetricsTracker {
   override val liveMetrics: StateFlow<InferenceMetrics?> = MutableStateFlow(null)
   private val engineId = runtime["engineId"] ?: UUID.randomUUID().toString()
   private var sessionId = UUID.randomUUID().toString()
   private var turnIndex = 0
-  private var operation: PerformanceDiagnostics.Operation? = null
+  private var operation: DiagnosticOperation? = null
   private var session: ConversationSession? = null
   private var firstBenchmark: InferenceBenchmark? = null
   private var contextBefore: Int? = null
@@ -44,9 +43,7 @@ internal class LocalDiagnosticsMetricsTracker(
   private var request: Map<String, Any?> = emptyMap()
   private var conversationConfiguration = modelConfiguration(model)
   private var initialization =
-    if (recordInitialization)
-      PerformanceDiagnostics.begin(context, "model_initialization", metadata())
-    else null
+    if (recordInitialization) beginOperation("model_initialization", metadata()) else null
 
   private fun metadata(): Map<String, Any?> =
     mapOf(
@@ -70,6 +67,11 @@ internal class LocalDiagnosticsMetricsTracker(
   }
 
   @Synchronized
+  override fun updateConversationDiagnostics(values: Map<String, Any?>) {
+    conversationConfiguration = values.toMap()
+  }
+
+  @Synchronized
   override fun updateRequestDiagnostics(values: Map<String, Any?>) {
     request = values.toMap()
   }
@@ -83,8 +85,7 @@ internal class LocalDiagnosticsMetricsTracker(
   override fun startTurn(session: ConversationSession) {
     if (operation != null || !session.isAlive) return
     operation =
-      PerformanceDiagnostics.begin(
-        context,
+      beginOperation(
         "inference",
         metadata() + mapOf("turnIndex" to turnIndex++, "request" to request),
       )

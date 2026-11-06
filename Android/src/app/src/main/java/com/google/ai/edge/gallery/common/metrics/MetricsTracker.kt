@@ -17,6 +17,7 @@
 package com.google.ai.edge.gallery.common.metrics
 
 import android.content.Context
+import com.google.ai.edge.gallery.common.diagnostics.PerformanceDiagnostics
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
 import com.google.ai.edge.gallery.data.Model
@@ -85,6 +86,9 @@ interface MetricsTracker {
 
   /** Records whitelisted request dimensions without retaining content. */
   fun updateRequestDiagnostics(values: Map<String, Any?>) {}
+
+  /** Captures the configuration actually passed when a conversation is created. */
+  fun updateConversationDiagnostics(values: Map<String, Any?>) {}
 
   /** Adds a monotonic lifecycle checkpoint to local diagnostics. */
   fun markPhase(name: String) {}
@@ -161,12 +165,13 @@ interface MetricsTracker {
 
       if (!model.supportModelBenchmark) return NoOpMetricsTracker()
       return LocalDiagnosticsMetricsTracker(
-        context.applicationContext,
         model,
         taskId,
         diagnosticRuntime,
         recordInitialization,
-      )
+      ) { kind, metadata ->
+        PerformanceDiagnostics.begin(context.applicationContext, kind, metadata)
+      }
     }
   }
 }

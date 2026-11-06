@@ -78,5 +78,7 @@ APK assembly, signing-key restoration, APK artifact upload and release publicati
 Do not merge/push this feature to `main` until APK packaging is requested. Unit tests cover history
 retention/reload/corruption/storage failure, credential redaction and valid JSON, unavailable and
 non-finite readings, raw native metrics and benchmark units, streaming timing/concurrent callbacks,
-frame deadlines, and bounded samples with full-run aggregates. Device-specific counters and native
+frame deadlines, bounded samples with full-run aggregates, and actual inference lifecycle behavior
+(success, error, cancellation before/after output, session reset, duplicate completion, and
+synchronous requests). Device-specific counters and native
 behavior require a later on-device check after an APK is authorized.

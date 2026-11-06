@@ -33,6 +33,15 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
+/** Small recording boundary also used by inference lifecycle tests without Android or JNI. */
+interface DiagnosticOperation {
+  fun onContent(answer: String, thinking: String?): Boolean
+
+  fun markPhase(name: String)
+
+  fun finish(status: String, values: Map<String, Any?> = emptyMap(), error: String? = null)
+}
+
 /** Local only. No prompt, generated content, tools, credentials, or analytics transport. */
 object PerformanceDiagnostics {
   private val worker =
@@ -126,7 +135,8 @@ object PerformanceDiagnostics {
   }
 
   class Operation
-  internal constructor(private val kind: String, private val metadata: Map<String, Any?>) {
+  internal constructor(private val kind: String, private val metadata: Map<String, Any?>) :
+    DiagnosticOperation {
     val id: String = UUID.randomUUID().toString()
     private val startedNs = System.nanoTime()
     private val startedAt = Instant.now().toString()
@@ -138,7 +148,7 @@ object PerformanceDiagnostics {
     private val phases = linkedMapOf<String, Double>()
 
     @Synchronized
-    fun markPhase(name: String) {
+    override fun markPhase(name: String) {
       if (endedNs == null) phases[name] = (System.nanoTime() - startedNs) / 1e6
     }
 
@@ -154,12 +164,12 @@ object PerformanceDiagnostics {
     }
 
     /** Retain lengths, never the strings. Returns true for the first content callback. */
-    fun onContent(answer: String, thinking: String?): Boolean =
+    override fun onContent(answer: String, thinking: String?): Boolean =
       if (endedNs == null) stream.add(System.nanoTime(), answer.length, thinking?.length ?: 0)
       else false
 
     @Synchronized
-    fun finish(status: String, values: Map<String, Any?> = emptyMap(), error: String? = null) {
+    override fun finish(status: String, values: Map<String, Any?>, error: String?) {
       if (endedNs != null) return
       finalValues =
         values +
