@@ -79,7 +79,7 @@ jobs:
       - name: Test and build the release variant
         working-directory: Android/src
         run: |
-          ./gradlew :app:testReleaseUnitTest :app:assembleRelease \
+          ./gradlew :app:testDebugUnitTest :app:assembleRelease \
             --console=plain --no-daemon --max-workers=2 \
             '-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:ActiveProcessorCount=4 -Dfile.encoding=UTF-8' \
             -Pkotlin.compiler.execution.strategy=in-process \
@@ -121,8 +121,8 @@ jobs:
         with:
           name: android-test-results-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            Android/src/app/build/reports/tests/testReleaseUnitTest/
-            Android/src/app/build/test-results/testReleaseUnitTest/
+            Android/src/app/build/reports/tests/testDebugUnitTest/
+            Android/src/app/build/test-results/testDebugUnitTest/
           if-no-files-found: warn
           retention-days: 7
 
