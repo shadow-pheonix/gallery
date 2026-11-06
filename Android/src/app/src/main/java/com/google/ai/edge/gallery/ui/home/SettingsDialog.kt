@@ -20,6 +20,7 @@ import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
 import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -61,6 +62,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +85,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.R
+import com.google.ai.edge.gallery.common.diagnostics.DiagnosticsExporter
 import com.google.ai.edge.gallery.proto.Theme
 import com.google.ai.edge.gallery.services.asr.AsrEngineType
 import com.google.ai.edge.gallery.ui.common.ClickableLink
@@ -97,6 +100,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.min
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 private val THEME_OPTIONS = listOf(Theme.THEME_AUTO, Theme.THEME_LIGHT, Theme.THEME_DARK)
 
@@ -121,6 +126,8 @@ fun SettingsDialog(
   val focusRequester = remember { FocusRequester() }
   val interactionSource = remember { MutableInteractionSource() }
   var showTos by remember { mutableStateOf(false) }
+  var exportingDiagnostics by remember { mutableStateOf(false) }
+  val coroutineScope = rememberCoroutineScope()
 
   LaunchedEffect(Unit) { modelManagerViewModel.checkAsrEngineSupport() }
 
@@ -387,6 +394,62 @@ fun SettingsDialog(
                   }
                 }
               }
+            }
+          }
+
+          Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            Text(
+              stringResource(R.string.settings_diagnostics_title),
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+            )
+            Text(
+              stringResource(R.string.settings_diagnostics_description),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+              enabled = !exportingDiagnostics,
+              onClick = {
+                exportingDiagnostics = true
+                val appContext = context.applicationContext
+                val statuses = modelManagerViewModel.uiState.value.modelDownloadStatus.toMap()
+                val token = modelManagerViewModel.getTokenStatusAndData().data
+                coroutineScope.launch {
+                  try {
+                    val filename =
+                      DiagnosticsExporter.export(
+                        context = appContext,
+                        modelStatuses = statuses,
+                        secrets = listOfNotNull(token?.accessToken, token?.refreshToken),
+                      )
+                    Toast.makeText(
+                      appContext,
+                      appContext.getString(R.string.settings_diagnostics_saved, filename),
+                      Toast.LENGTH_LONG,
+                    ).show()
+                  } catch (cancelled: CancellationException) {
+                    throw cancelled
+                  } catch (_: Exception) {
+                    Toast.makeText(
+                      appContext,
+                      R.string.settings_diagnostics_failed,
+                      Toast.LENGTH_LONG,
+                    ).show()
+                  } finally {
+                    exportingDiagnostics = false
+                  }
+                }
+              },
+            ) {
+              Text(
+                stringResource(
+                  if (exportingDiagnostics) R.string.settings_diagnostics_exporting
+                  else R.string.settings_diagnostics_export
+                )
+              )
             }
           }
 

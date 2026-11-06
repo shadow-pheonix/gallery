@@ -15,6 +15,12 @@
 -->
 
 <resources xmlns:tools="http://schemas.android.com/tools">
+  <string name="settings_diagnostics_title">Diagnostics</string>
+  <string name="settings_diagnostics_description">Save device information, model status and recent app logs to Downloads.</string>
+  <string name="settings_diagnostics_export">Export diagnostics</string>
+  <string name="settings_diagnostics_exporting">Exporting…</string>
+  <string name="settings_diagnostics_saved">Saved to Downloads/%1$s</string>
+  <string name="settings_diagnostics_failed">Could not save diagnostics to Downloads. Check available storage and try again.</string>
   <string name="about_this_update" translatable="true" description="Title of the alert dialog that shows information about a model update. [CHAR_LIMIT=29]">About this update</string>
   <string name="all" translatable="true" description="Label for selecting or filtering all items (e.g., all models, all cutouts). [CHAR_LIMIT=18]">All</string>
   <string name="add" translatable="true" description="Button label to add a new item, such as a skill or server. [CHAR_LIMIT=6]">Add</string>
