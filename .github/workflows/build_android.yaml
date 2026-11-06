@@ -66,15 +66,16 @@ jobs:
             echo '::error::ANDROID_DEBUG_KEYSTORE_BASE64 is required. Refusing to generate a new signing key.'
             exit 1
           fi
-          install -d -m 700 "$HOME/.android"
+          keystore="$RUNNER_TEMP/edge-gallery-signing.keystore"
           umask 077
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
-          actual_cert="$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" \
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          actual_cert="$(keytool -exportcert -keystore "$keystore" \
             -storepass android -alias androiddebugkey | sha256sum | cut -d ' ' -f 1)"
           if [[ "$actual_cert" != "$EXPECTED_CERT_SHA256" ]]; then
             echo '::error::The signing key does not match the existing APK certificate.'
             exit 1
           fi
+          printf 'ANDROID_SIGNING_KEYSTORE=%s\n' "$keystore" >> "$GITHUB_ENV"
 
       - name: Test and build the release variant
         working-directory: Android/src

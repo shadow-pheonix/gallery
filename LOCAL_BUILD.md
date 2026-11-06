@@ -26,6 +26,8 @@ place. The keystore is stored only in the encrypted repository secret
 The workflow checks the certificate before building and again on the completed APK. If the
 secret is missing or contains a different key, the workflow fails instead of generating a
 replacement key. Preserve the original keystore when moving or recreating this repository.
+Gradle receives the verified keystore's exact path through `ANDROID_SIGNING_KEYSTORE`; CI does
+not rely on the runner's default debug keystore location.
 
 Public signing certificate SHA-256:
 

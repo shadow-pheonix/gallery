@@ -53,6 +53,18 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+  signingConfigs {
+    getByName("debug") {
+      val ciKeystore = providers.environmentVariable("ANDROID_SIGNING_KEYSTORE").orNull
+      if (ciKeystore != null) {
+        storeFile = file(ciKeystore)
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
+    }
+  }
+
   buildTypes {
     release {
       if (ciBuildNumber > 0) versionNameSuffix = "-build.$ciBuildNumber"
