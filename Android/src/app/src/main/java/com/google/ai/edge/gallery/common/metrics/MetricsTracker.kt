@@ -67,8 +67,8 @@ interface MetricsTracker {
 
   /**
    * Records the model's initialization outcome (`Initialized` or `Failed`), duration, and active
-   * sampler configuration from [Model], dispatching telemetry to Logcat and Firebase Analytics when
-   * metrics tracking is enabled.
+   * sampler configuration from [Model], saving performance telemetry in the local diagnostics
+   * history.
    */
   fun onModelInitialized()
 
@@ -82,6 +82,12 @@ interface MetricsTracker {
    * @param session Active session abstraction for ground-truth telemetry.
    */
   fun startTurn(session: ConversationSession)
+
+  /** Records whitelisted request dimensions without retaining content. */
+  fun updateRequestDiagnostics(values: Map<String, Any?>) {}
+
+  /** Adds a monotonic lifecycle checkpoint to local diagnostics. */
+  fun markPhase(name: String) {}
 
   /**
    * Universal streaming token callback.
@@ -108,8 +114,8 @@ interface MetricsTracker {
 
   /**
    * Starts a new session after the conversation is cleared or recreated. Refreshes the session
-   * metadata and restarts the turn index and the context token count. Drops an active turn without
-   * logging it.
+   * metadata and restarts the turn index and context count. Local diagnostics records an active
+   * turn as cancelled before resetting.
    */
   fun resetSession()
 
@@ -139,7 +145,7 @@ interface MetricsTracker {
     /**
      * Factory function for creating a [MetricsTracker].
      *
-     * Instantiates [LitertlmMetricsTracker] if [model] supports benchmark telemetry, or a
+     * Instantiates [LocalDiagnosticsMetricsTracker] if [model] supports benchmark telemetry, or a
      * lightweight [NoOpMetricsTracker] otherwise.
      */
     fun create(
@@ -149,23 +155,17 @@ interface MetricsTracker {
       ioDispatcher: CoroutineDispatcher,
       config: MetricsTrackerConfig = MetricsTrackerConfig(),
       timeSource: TimeSource = TimeSource.Monotonic,
+      diagnosticRuntime: Map<String, Any?> = emptyMap(),
+      recordInitialization: Boolean = true,
     ): MetricsTracker {
 
-      val enableInferenceMetrics = false
-
-      if (!enableInferenceMetrics) {
-        // Returns a no-op tracker if benchmark telemetry is disabled or the model does not support
-        // benchmark mode.
-        return NoOpMetricsTracker()
-      }
-
-      return LitertlmMetricsTracker(
-        context = context.applicationContext,
-        model = model,
-        taskId = taskId,
-        config = config,
-        ioDispatcher = ioDispatcher,
-        timeSource = timeSource,
+      if (!model.supportModelBenchmark) return NoOpMetricsTracker()
+      return LocalDiagnosticsMetricsTracker(
+        context.applicationContext,
+        model,
+        taskId,
+        diagnosticRuntime,
+        recordInitialization,
       )
     }
   }

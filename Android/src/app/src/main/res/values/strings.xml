@@ -16,7 +16,7 @@
 
 <resources xmlns:tools="http://schemas.android.com/tools">
   <string name="settings_diagnostics_title">Diagnostics</string>
-  <string name="settings_diagnostics_description">Save device information, model status and recent app logs to Downloads.</string>
+  <string name="settings_diagnostics_description">Run the model and benchmarks first, then export timings, token speeds, backend settings, memory, thermal, battery, frame timing, errors, and recent logs as JSON to Downloads. Records stay on this device. Review logs before sharing.</string>
   <string name="settings_diagnostics_export">Export diagnostics</string>
   <string name="settings_diagnostics_exporting">Exporting…</string>
   <string name="settings_diagnostics_saved">Saved to Downloads/%1$s</string>

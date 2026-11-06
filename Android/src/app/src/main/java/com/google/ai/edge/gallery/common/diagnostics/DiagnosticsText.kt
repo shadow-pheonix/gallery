@@ -23,8 +23,12 @@ internal fun redactDiagnostics(text: String, secrets: List<String> = emptyList()
     result = result.replace(secret, "[REDACTED]")
   }
   result = result.replace(Regex("hf_[A-Za-z0-9]+"), "[REDACTED]")
-  result = result.replace(Regex("(?i)Bearer\\s+[^\\s\"',;]+"), "Bearer [REDACTED]")
+  result = result.replace(Regex("(?i)(?:Bearer|Basic)\\s+[^\\s\"',;]+"), "[REDACTED]")
   return result.replace(
-    Regex("(?i)((?:access_token|refresh_token|id_token|api_key|authorization|client_secret)[\"']?\\s*[:=]\\s*[\"']?)[^\\s\"'&,;}]+"),
-  ) { match -> "${match.groupValues[1]}[REDACTED]" }
+    Regex(
+      "(?i)((?:access_token|refresh_token|id_token|api_key|authorization|client_secret)[\"']?\\s*[:=]\\s*[\"']?)[^\\s\"'&,;}]+"
+    )
+  ) { match ->
+    "${match.groupValues[1]}[REDACTED]"
+  }
 }

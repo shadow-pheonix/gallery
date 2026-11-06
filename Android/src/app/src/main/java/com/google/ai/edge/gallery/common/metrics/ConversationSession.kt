@@ -32,6 +32,8 @@ data class InferenceBenchmark(
   val decodeTokenCount: Int? = null,
   val prefillSpeedTps: Float? = null,
   val decodeSpeedTps: Float? = null,
+  val initTimeMs: Double? = null,
+  val nativeTimeToFirstTokenMs: Double? = null,
 )
 
 /**
@@ -58,12 +60,16 @@ fun Conversation.asSession(): ConversationSession =
       get() = this@asSession.isAlive
 
     override fun getTokenCount(): Int? =
-    null
+      try {
+        this@asSession.getTokenCount().takeIf { it >= 0 }
+      } catch (_: Exception) {
+        null
+      }
 
     override fun getBenchmark(): InferenceBenchmark? =
       try {
         @OptIn(ExperimentalApi::class) this@asSession.getBenchmarkInfo().toInferenceBenchmark()
-      } catch (_: Throwable) {
+      } catch (_: Exception) {
         null
       }
   }
@@ -73,6 +79,9 @@ internal fun BenchmarkInfo.toInferenceBenchmark(): InferenceBenchmark =
   InferenceBenchmark(
     prefillTokenCount = lastPrefillTokenCount.takeIf { it > 0 },
     decodeTokenCount = lastDecodeTokenCount.takeIf { it > 0 },
-    prefillSpeedTps = lastPrefillTokensPerSecond.takeIf { it > 0.0 }?.toFloat(),
-    decodeSpeedTps = lastDecodeTokensPerSecond.takeIf { it > 0.0 }?.toFloat(),
+    prefillSpeedTps = lastPrefillTokensPerSecond.takeIf { it > 0.0 && it.isFinite() }?.toFloat(),
+    decodeSpeedTps = lastDecodeTokensPerSecond.takeIf { it > 0.0 && it.isFinite() }?.toFloat(),
+    initTimeMs = initTimeInSecond.takeIf { it > 0.0 && it.isFinite() }?.times(1000),
+    nativeTimeToFirstTokenMs =
+      timeToFirstTokenInSecond.takeIf { it > 0.0 && it.isFinite() }?.times(1000),
   )

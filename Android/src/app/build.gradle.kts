@@ -44,11 +44,14 @@ android {
     // Needed for HuggingFace auth workflows.
     // Use the scheme of the "Redirect URLs" in HuggingFace app.
     manifestPlaceholders["appAuthRedirectScheme"] =
-        "REPLACE_WITH_YOUR_REDIRECT_SCHEME_IN_HUGGINGFACE_APP"
+      "REPLACE_WITH_YOUR_REDIRECT_SCHEME_IN_HUGGINGFACE_APP"
     manifestPlaceholders["applicationName"] = "com.google.ai.edge.gallery.GalleryApplication"
     manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher"
 
     buildConfigField("String", "FEEDBACK_API_KEY", "\"\"")
+    buildConfigField("String", "LITERTLM_VERSION", "\"${libs.versions.litertlm.get()}\"")
+    val sourceCommit = providers.environmentVariable("GITHUB_SHA").orElse("local-unrecorded").get()
+    buildConfigField("String", "SOURCE_COMMIT", "\"$sourceCommit\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

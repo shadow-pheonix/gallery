@@ -57,7 +57,9 @@ import com.google.ai.edge.litertlm.ModelInfo
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ToolProvider
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.Collections
+import java.util.UUID
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineDispatcher
@@ -86,14 +88,40 @@ data class LlmModelInstance(
   val engine: Engine,
   var conversation: Conversation,
   val metricsTracker: MetricsTracker? = null,
+  val diagnosticsTrackerFactory: (() -> MetricsTracker)? = null,
 ) : LlmConversationInstance {
   val activeEphemeralConversations: MutableSet<Conversation> =
     Collections.synchronizedSet(mutableSetOf())
 
   override fun getTokenCount(): Int = conversation.getTokenCount()
 
-  override fun sendMessage(prompt: String, maxOutputTokens: Int?): Message =
-    conversation.sendMessage(prompt, maxOutputToken = maxOutputTokens)
+  override fun sendMessage(prompt: String, maxOutputTokens: Int?): Message {
+    val tracker = diagnosticsTrackerFactory?.invoke() ?: metricsTracker
+    tracker?.updateRequestDiagnostics(
+      mapOf(
+        "inputCharacterCount" to prompt.length,
+        "maxOutputTokens" to maxOutputTokens,
+        "mode" to "synchronous",
+        "appFirstContentTimingAvailable" to false,
+      )
+    )
+    tracker?.startTurn(conversation.asSession())
+    return try {
+      tracker?.markPhase("nativeDispatch")
+      conversation.sendMessage(prompt, maxOutputToken = maxOutputTokens).also {
+        tracker?.endTurn(InferenceStatus.Code.SUCCESS, null)
+      }
+    } catch (error: Exception) {
+      tracker?.endTurn(
+        if (error is CancellationException) InferenceStatus.Code.CANCELLED
+        else InferenceStatus.Code.ERROR,
+        error.message,
+      )
+      throw error
+    } finally {
+      if (diagnosticsTrackerFactory != null) tracker?.close()
+    }
+  }
 }
 
 object LlmChatModelHelper : LlmModelHelper {
@@ -185,27 +213,67 @@ object LlmChatModelHelper : LlmModelHelper {
           defaultValue = false,
         )
     }
+    val modelFile = File(modelPath)
+    val runtimeDiagnostics =
+      mapOf(
+        "engineId" to UUID.randomUUID().toString(),
+        "backend" to preferredBackend.name,
+        "backendEvidence" to
+          "EngineConfig passed to LiteRT-LM; does not prove placement of every operation",
+        "visionBackend" to if (shouldEnableImage) visionBackend.name else null,
+        "audioBackend" to if (shouldEnableAudio) "CPU" else null,
+        "cpuThreadCount" to (preferredBackend as? Backend.CPU)?.threadCount,
+        "cpuThreadPolicy" to
+          "Null thread count uses the runtime default; worker count is not exposed",
+        "maxContextTokens" to maxTokens,
+        "activationDataType" to engineConfig.activationDataType?.name,
+        "nativeBenchmarkEnabled" to model.supportModelBenchmark,
+        "speculativeDecodingSupported" to supportsSpeculativeDecoding,
+        "speculativeDecodingEnabled" to speculativeDecoding,
+        "modelFileName" to modelFile.name,
+        "modelFileBytes" to modelFile.length(),
+        "modelFileModifiedAtMs" to modelFile.lastModified(),
+        "modelParentDirectoryWritable" to modelFile.parentFile?.canWrite(),
+        "cacheDirectoryPolicy" to
+          if (engineConfig.cacheDir == null) "Runtime default" else "External app files",
+        "samplerPolicy" to
+          if (preferredBackend is Backend.NPU) "Runtime default; custom sampler omitted for NPU"
+          else "Explicit topK/topP/temperature",
+        "systemInstructionPresent" to (systemInstruction != null),
+        "initialMessageCount" to initialMessages.size,
+        "toolProviderCount" to tools.size,
+        "conversationConstrainedDecoding" to enableConversationConstrainedDecoding,
+      )
     val metricsTracker =
       MetricsTracker.create(
         context = context,
         model = model,
         taskId = taskId,
         ioDispatcher = ioDispatcher,
+        diagnosticRuntime = runtimeDiagnostics,
       )
     // Create an instance of LiteRT LM engine and conversation.
     try {
-      val enableBenchmark = false
+      val enableBenchmark = model.supportModelBenchmark
       ExperimentalFlags.enableBenchmark = enableBenchmark
       ExperimentalFlags.enableSpeculativeDecoding = speculativeDecoding
       Log.d(TAG, "Speculative decoding enabled: $speculativeDecoding")
-      val engine = Engine(engineConfig)
-      try {
-        engine.initialize()
-      } finally {
-        ExperimentalFlags.enableSpeculativeDecoding = false
-        ExperimentalFlags.enableBenchmark = false
-      }
+      val engine =
+        try {
+          Engine(engineConfig).also { created ->
+            try {
+              created.initialize()
+            } catch (error: Exception) {
+              runCatching { created.close() }
+              throw error
+            }
+          }
+        } finally {
+          ExperimentalFlags.enableSpeculativeDecoding = false
+          ExperimentalFlags.enableBenchmark = false
+        }
 
+      metricsTracker.markPhase("engineInitialized")
       val conversation =
         try {
           createConversation(
@@ -223,17 +291,29 @@ object LlmChatModelHelper : LlmModelHelper {
           } catch (_: Exception) {}
           throw e
         }
+      metricsTracker.markPhase("conversationCreated")
       model.markInitialized(
         LlmModelInstance(
           engine = engine,
           conversation = conversation,
           metricsTracker = metricsTracker,
+          diagnosticsTrackerFactory = {
+            MetricsTracker.create(
+              context.applicationContext,
+              model,
+              taskId,
+              ioDispatcher,
+              diagnosticRuntime = runtimeDiagnostics,
+              recordInitialization = false,
+            )
+          },
         )
       )
     } catch (e: Exception) {
       val errorMsg = cleanUpMediapipeTaskErrorMessage(e.message ?: "Unknown error")
       model.markInitializationFailed(errorMsg)
       metricsTracker.onModelInitialized()
+      metricsTracker.close()
       onDone(errorMsg)
       return
     }
@@ -306,11 +386,7 @@ object LlmChatModelHelper : LlmModelHelper {
       if (accelerator == Accelerator.NPU || accelerator == Accelerator.TPU) {
         null
       } else {
-        SamplerConfig(
-          topK = topK,
-          topP = topP.toDouble(),
-          temperature = temperature.toDouble(),
-        )
+        SamplerConfig(topK = topK, topP = topP.toDouble(), temperature = temperature.toDouble())
       }
     ExperimentalFlags.enableConversationConstrainedDecoding = enableConversationConstrainedDecoding
     return try {
@@ -442,13 +518,15 @@ object LlmChatModelHelper : LlmModelHelper {
                   topP = topP.toDouble(),
                   temperature = temperature.toDouble(),
                 )
-              },
+              }
           )
         )
       } else {
         instance.conversation
       }
 
+    val turnTracker =
+      if (isEphemeral) instance.diagnosticsTrackerFactory?.invoke() else instance.metricsTracker
     val ephemeralClosed = AtomicBoolean(false)
     var scopeCompletionHandle: DisposableHandle? = null
     fun closeEphemeralConversationOnce() {
@@ -456,6 +534,7 @@ object LlmChatModelHelper : LlmModelHelper {
       scopeCompletionHandle?.dispose()
       scopeCompletionHandle = null
       instance.activeEphemeralConversations.remove(conversation)
+      turnTracker?.close()
       // Offload native Conversation.close() onto ioDispatcher so MessageCallback threads never
       // self-join their own native LiteRT-LM worker thread.
       CoroutineScope(ioDispatcher).launch {
@@ -483,9 +562,22 @@ object LlmChatModelHelper : LlmModelHelper {
 
     // Step 1: Start the turn before processing the input, so its latency includes the input
     // processing the user waits for.
-    if (!isEphemeral) {
-      instance.metricsTracker?.startTurn(conversation.asSession())
-    }
+    turnTracker?.updateRequestDiagnostics(
+      mapOf(
+        "inputCharacterCount" to input.length,
+        "imageCount" to images.size,
+        "imagePixelCounts" to images.map { it.width.toLong() * it.height },
+        "audioClipCount" to audioClips.size,
+        "audioBytes" to audioClips.sumOf { it.size.toLong() },
+        "thinkingEnabled" to (extraContext["enable_thinking"] == "true"),
+        "maxOutputTokens" to
+          extraContext[EXTRA_CONTEXT_MAX_OUTPUT_TOKENS]?.toIntOrNull()?.takeIf { it > 0 },
+        "ephemeralConversation" to isEphemeral,
+        "mode" to "streaming",
+        "responseSchemaPresent" to (responseJsonSchema != null),
+      )
+    )
+    turnTracker?.startTurn(conversation.asSession())
     try {
       // Step 2: Assemble multimodal prompt attachments (images, audio clips, and text).
       val contents = mutableListOf<Content>()
@@ -500,6 +592,7 @@ object LlmChatModelHelper : LlmModelHelper {
         contents.add(Content.Text(input))
       }
 
+      turnTracker?.markPhase("inputPrepared")
       // Step 3: Configure extra runtime parameters (such as thinking reasoning mode).
       val enableThinking = extraContext["enable_thinking"] == "true"
       val finalExtraContext: Map<String, Any> = extraContext + ("enable_thinking" to enableThinking)
@@ -510,6 +603,7 @@ object LlmChatModelHelper : LlmModelHelper {
         extraContext[EXTRA_CONTEXT_MAX_OUTPUT_TOKENS]?.toIntOrNull()?.takeIf { it > 0 }
 
       // Step 4: Dispatch asynchronous streaming inference to the native LiteRT-LM engine.
+      turnTracker?.markPhase("nativeDispatch")
       conversation.sendMessageAsync(
         Contents.of(contents),
         object : MessageCallback {
@@ -517,46 +611,25 @@ object LlmChatModelHelper : LlmModelHelper {
             val text = message.toString()
             val thinking = message.channels[THOUGHT_CHANNEL]
             // Record streaming token to lock TTFT on first token and update live metrics.
-            if (!isEphemeral) {
-              instance.metricsTracker?.onNewToken(tokenText = text, thinkingText = thinking)
-            }
+            turnTracker?.onNewToken(tokenText = text, thinkingText = thinking)
             resultListener(text, false, thinking)
           }
 
           override fun onDone() {
-            if (isEphemeral) {
-              closeEphemeralConversationOnce()
-            } else {
-              // Finalize turn metrics with SUCCESS status.
-              val unused =
-                instance.metricsTracker?.endTurn(
-                  statusCode = InferenceStatus.Code.SUCCESS,
-                  errorMessage = null,
-                )
-            }
+            turnTracker?.endTurn(InferenceStatus.Code.SUCCESS, null)
+            closeEphemeralConversationOnce()
             resultListener("", true, null)
           }
 
           override fun onError(throwable: Throwable) {
-            closeEphemeralConversationOnce()
             if (throwable is CancellationException) {
-              // Native cancellation via cancelProcess() completed on the worker thread; finalize
-              // cancelled-turn metrics now that engine benchmark and token counts are ready.
-              Log.i(TAG, "The inference is cancelled.")
-              if (!isEphemeral) {
-                val unused = instance.metricsTracker?.cancelTurn()
-              }
+              turnTracker?.cancelTurn()
+              closeEphemeralConversationOnce()
               resultListener("", true, null)
             } else {
-              // Engine error or crash: record ERROR status with error message.
+              turnTracker?.endTurn(InferenceStatus.Code.ERROR, throwable.message ?: "Unknown error")
+              closeEphemeralConversationOnce()
               Log.e(TAG, "onError", throwable)
-              if (!isEphemeral) {
-                val unused =
-                  instance.metricsTracker?.endTurn(
-                    statusCode = InferenceStatus.Code.ERROR,
-                    errorMessage = throwable.message ?: "Unknown error",
-                  )
-              }
               onError("Error: ${throwable.message}")
             }
           }
@@ -565,16 +638,8 @@ object LlmChatModelHelper : LlmModelHelper {
         maxOutputToken = maxOutputTokens,
       )
     } catch (e: Exception) {
-      if (isEphemeral) {
-        closeEphemeralConversationOnce()
-      } else {
-        // No engine callback follows a failure before the message is sent, so end the turn here.
-        val unused =
-          instance.metricsTracker?.endTurn(
-            statusCode = InferenceStatus.Code.ERROR,
-            errorMessage = e.message ?: "Unknown error",
-          )
-      }
+      turnTracker?.endTurn(InferenceStatus.Code.ERROR, e.message ?: "Unknown error")
+      closeEphemeralConversationOnce()
       throw e
     }
   }

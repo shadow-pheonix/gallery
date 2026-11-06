@@ -415,7 +415,12 @@ fun SettingsDialog(
               onClick = {
                 exportingDiagnostics = true
                 val appContext = context.applicationContext
-                val statuses = modelManagerViewModel.uiState.value.modelDownloadStatus.toMap()
+                val state = modelManagerViewModel.uiState.value
+                val statuses = state.modelDownloadStatus.toMap()
+                val models =
+                  (state.tasks.flatMap { it.models } + state.supplementaryModels + state.selectedModel)
+                    .distinctBy { it.name }
+                    .toList()
                 val token = modelManagerViewModel.getTokenStatusAndData().data
                 coroutineScope.launch {
                   try {
@@ -423,6 +428,10 @@ fun SettingsDialog(
                       DiagnosticsExporter.export(
                         context = appContext,
                         modelStatuses = statuses,
+                        models = models,
+                        benchmarkResults = {
+                          modelManagerViewModel.dataStoreRepository.getAllBenchmarkResults()
+                        },
                         secrets = listOfNotNull(token?.accessToken, token?.refreshToken),
                       )
                     Toast.makeText(

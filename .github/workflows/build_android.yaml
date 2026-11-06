@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   build:
-    name: Test and build APK
+    name: Validate Android changes
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
@@ -77,10 +77,20 @@ jobs:
           fi
           printf 'ANDROID_SIGNING_KEYSTORE=%s\n' "$keystore" >> "$GITHUB_ENV"
 
-      - name: Test and build the release variant
+      - name: Run unit tests (no APK packaging on feature branches)
         working-directory: Android/src
         run: |
-          ./gradlew :app:testDebugUnitTest :app:assembleRelease \
+          ./gradlew :app:testDebugUnitTest \
+            --console=plain --no-daemon --max-workers=2 \
+            '-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:ActiveProcessorCount=4 -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            -PciBuildNumber="$GITHUB_RUN_NUMBER"
+
+      - name: Build the release APK on main only
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        working-directory: Android/src
+        run: |
+          ./gradlew :app:assembleRelease \
             --console=plain --no-daemon --max-workers=2 \
             '-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:ActiveProcessorCount=4 -Dfile.encoding=UTF-8' \
             -Pkotlin.compiler.execution.strategy=in-process \

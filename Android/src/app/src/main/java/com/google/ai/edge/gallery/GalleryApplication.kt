@@ -41,6 +41,7 @@ class GalleryApplication : Application() {
       return
     }
     super.onCreate()
+    com.google.ai.edge.gallery.common.diagnostics.PerformanceDiagnostics.initialize(this)
     registerComponentCallbacks(ttsMemoryTrimCallbacks)
     // Initialize the notification schedule manager to load the scheduled notifications from the
     // disk.
