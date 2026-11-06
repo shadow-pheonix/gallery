@@ -28,6 +28,8 @@ plugins {
   alias(libs.plugins.ksp)
 }
 
+val ciBuildNumber = providers.gradleProperty("ciBuildNumber").map { it.toInt() }.getOrElse(0)
+
 android {
   namespace = "com.google.ai.edge.gallery"
   compileSdk { this.version = release(37) { minorApiLevel = 0 } }
@@ -36,7 +38,7 @@ android {
     applicationId = "com.google.aiedge.gallery"
     minSdk = 31
     targetSdk = 37
-    versionCode = 52
+    versionCode = 52 + ciBuildNumber
     versionName = "1.0.23"
 
     // Needed for HuggingFace auth workflows.
@@ -53,6 +55,7 @@ android {
 
   buildTypes {
     release {
+      if (ciBuildNumber > 0) versionNameSuffix = "-build.$ciBuildNumber"
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("debug")
